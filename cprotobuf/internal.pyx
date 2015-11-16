@@ -53,7 +53,7 @@ cdef class RepeatedContainer(list):
 
 cdef class Field(object):
 
-    cdef public bytes name
+    cdef public str name
     cdef object type
     cdef public int index
     cdef public bint packed
@@ -223,6 +223,7 @@ class MetaProtoEntity(type):
             _fields.append(f)
             _fieldsmap_by_name[name] = f
         newcls = super(MetaProtoEntity, cls).__new__(cls, clsname, bases, attrs)
+        _fields.sort(key=lambda f:f.index)
         newcls._fields = _fields
         newcls._fieldsmap = _fieldsmap
         newcls._fieldsmap_by_name = _fieldsmap_by_name
@@ -240,14 +241,20 @@ class ProtoEntity(object):
         encode_data(buf, type(self), self.__dict__)
         return buf
 
-    def ParseFromString(self, bytes s):
-        cdef char *buff
+    def ParseFromString(self, s, int offset=0, int count=-1):
+        cdef char *buff = <char*>s
         cdef char *start
         cdef char *end
-        cdef Py_ssize_t size
-        PyString_AsStringAndSize(s, &buff, &size)
-        start = buff
-        end = buff + size
+        cdef Py_ssize_t size = len(s)
+
+        assert offset < size, "Offset out of bound."
+        assert count < size-offset, "Count out of bound."
+
+        start = buff + offset
+        if count < 0:
+            end = buff + size
+        else:
+            end = start + count
 
         try:
             decode_object(self, &buff, end)
@@ -256,21 +263,32 @@ class ProtoEntity(object):
             raise DecodeError(e.args[0] - <uint64_t>start, e.args[1])
 
     def __unicode__(self):
-        cdef Field f
-        buf = []
-        d = self.__dict__
-        for f in self._fields:
-            value = d.get(f.name)
-            if value==None:
-                continue
-            if f.repeated:
-                buf.append(u'%s = [%s]' % (f.name, u','.join(map(unicode, value))))
-            else:
-                buf.append(u'%s = %s' % (f.name, unicode(value)))
-        return u'\n'.join(buf)
+        return unicode(self.todict())
 
     def __str__(self):
         return unicode(self).encode('utf-8')
+
+    def todict(self):
+        cdef Field f
+        data = {}
+        d = self.__dict__
+        for f in self._fields:
+            value = d.get(f.name)
+            if value == None:
+                continue
+            if f.repeated:
+                if len(value) < 1:
+                    continue
+                if isinstance(value[0], ProtoEntity):
+                    data[f.name] = [v.todict() for v in value]
+                else:
+                    data[f.name] = value
+            else:
+                if isinstance(value, ProtoEntity):
+                    data[f.name] = value.todict()
+                else:
+                    data[f.name] = value
+        return data
 
 def encode_data(bytearray buf, cls, dict d):
     cdef bytearray buf1

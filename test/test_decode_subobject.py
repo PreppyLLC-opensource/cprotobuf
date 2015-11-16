@@ -1,3 +1,4 @@
+import pyximport; pyximport.install()
 from cprotobuf import ProtoEntity, Field
 
 s = b'\x10\x01\x08\x02\x1a\x02\x08\x01'
@@ -16,3 +17,4 @@ class ForDecodeMessage(ProtoEntity):
 def test_decode_subobject():
     msg = ForDecodeMessage()
     msg.ParseFromString(s)
+    assert msg.sub.a == 1
